@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Linux Health Monitor</title>
+<style>
+:root{--bg:#0b0f17;--card:#121927;--line:#1f2a3d;--tx:#e6edf7;--mu:#7d8ba3;--ok:#34d399;--warn:#fbbf24;--crit:#f87171;--ac:#60a5fa}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(900px 500px at 80% -10%,#16264a55,transparent),var(--bg);color:var(--tx);font:14px/1.5 ui-sans-serif,system-ui,sans-serif;padding:28px;max-width:1100px;margin-inline:auto}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+h1{font-size:20px;margin:0;letter-spacing:.2px}h1 span{color:var(--mu);font-weight:400;font-size:13px;display:block;font-family:ui-monospace,monospace}
+button{background:var(--ac);color:#06101f;border:0;border-radius:10px;padding:9px 16px;font-weight:600;cursor:pointer}button:disabled{opacity:.5}
+.ghost{background:transparent;color:var(--tx);border:1px solid var(--line)}
+.banner{border:1px solid var(--line);border-radius:16px;padding:18px 22px;display:flex;align-items:center;gap:16px;background:var(--card);margin-bottom:18px}
+.dot{width:14px;height:14px;border-radius:50%;box-shadow:0 0 0 0 currentColor;animation:p 2s infinite}
+@keyframes p{70%{box-shadow:0 0 0 12px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.banner b{font-size:18px}.banner small{color:var(--mu);display:block;font-family:ui-monospace,monospace}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;position:relative}
+.card h3{margin:0;font-size:12px;letter-spacing:1.2px;color:var(--mu);font-weight:600}
+.ring{display:block;margin:10px auto 0;width:120px;height:120px}.ring circle{fill:none;stroke-width:9;stroke-linecap:round}
+.ring .bg{stroke:var(--line)}.ring .fg{transition:stroke-dashoffset .8s,stroke .4s;transform:rotate(-90deg);transform-origin:50% 50%}
+.val{text-align:center;margin-top:-82px;height:82px;font-size:26px;font-weight:700}.val small{display:block;font-size:11px;color:var(--mu);font-weight:400}
+.spark{width:100%;height:46px;margin-top:8px}.th{font:11px ui-monospace,monospace;color:var(--mu);text-align:center}
+.tag{position:absolute;top:16px;right:16px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px}
+h2{font-size:13px;color:var(--mu);letter-spacing:1px;margin:26px 0 10px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;font:12.5px ui-monospace,monospace}
+td,th{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line)}th{color:var(--mu);font-weight:500}tr:last-child td{border:0}
+.empty{padding:40px;text-align:center;color:var(--mu)}.wrap{overflow-x:auto}
+</style></head><body>
+<header><h1>Linux Health Monitor<span>bash · cron · /proc · curl</span></h1>
+<div><button class="ghost" id="auto">Auto-refresh: on</button> <button id="run">Run check now</button></div></header>
+<div class="banner" id="banner"><div class="dot" style="color:var(--mu);background:var(--mu)"></div><div><b>Waiting for data…</b></div></div>
+<div class="grid" id="cards"></div>
+<h2>RECENT CHECKS</h2><div class="wrap"><table><thead><tr><th>Time</th><th>Level</th><th>CPU</th><th>MEM</th><th>DISK</th><th>HTTP</th></tr></thead><tbody id="rows"></tbody></table></div>
+<script>
+const $=s=>document.querySelector(s),COL=['var(--ok)','var(--warn)','var(--crit)'],NM=['OK','WARN','CRIT'];
+let auto=true;
+async function load(){try{const r=await fetch('/logs/history.jsonl?'+Date.now());if(!r.ok)return[];return(await r.text()).trim().split('\n').filter(Boolean).map(l=>JSON.parse(l))}catch{return[]}}
+function spark(a,k,c){if(a.length<2)return'';const v=a.map(x=>x[k]),mx=Math.max(100,...v);
+ const p=v.map((y,i)=>`${(i/(v.length-1)*100).toFixed(1)},${(30-y/mx*28).toFixed(1)}`).join(' ');
+ return`<svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polygon points="0,30 ${p} 100,30" fill="${c}" opacity=".12"/><polyline points="${p}" fill="none" stroke="${c}" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`}
+function card(n,pct,txt,sub,lv,th,sp){const c=COL[lv],C=2*Math.PI*48;
+ return`<div class="card"><h3>${n}</h3><span class="tag" style="color:${c};background:color-mix(in srgb,${c} 15%,transparent)">${NM[lv]}</span>
+ <svg class="ring" viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="48"/><circle class="fg" cx="60" cy="60" r="48" stroke="${c}" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-Math.min(pct,100)/100)}"/></svg>
+ <div class="val">${txt}<small>${sub}</small></div>${sp}<div class="th">${th}</div></div>`}
+function render(d){
+ if(!d.length){$('#rows').innerHTML='<tr><td colspan=6 class="empty">No data yet — click “Run check now”.</td></tr>';return}
+ const l=d[d.length-1],h=d.slice(-30),t=l.th,c=COL[l.level];
+ $('#banner').innerHTML=`<div class="dot" style="color:${c};background:${c}"></div><div><b>${['All systems healthy','Warning: threshold approaching','Critical: threshold breached'][l.level]}</b><small>last check ${l.t} · exit code ${l.level} · ${d.length} samples</small></div>`;
+ const up=l.lv.http===0||l.lv.http===1;
+ $('#cards').innerHTML=card('CPU',l.cpu,l.cpu+'%','utilization',l.lv.cpu,`warn ${t.cpu[0]}% · crit ${t.cpu[1]}%`,spark(h,'cpu',COL[l.lv.cpu]))
+ +card('MEMORY',l.mem,l.mem+'%','used',l.lv.mem,`warn ${t.mem[0]}% · crit ${t.mem[1]}%`,spark(h,'mem',COL[l.lv.mem]))
+ +card('DISK',l.disk,l.disk+'%','used',l.lv.disk,`warn ${t.disk[0]}% · crit ${t.disk[1]}%`,spark(h,'disk',COL[l.lv.disk]))
+ +card('HTTP ENDPOINT',up?100:0,l.code,up?l.ms+' ms':'unreachable',l.lv.http,`timeout ${t.to}s`,spark(h,'ms',COL[l.lv.http]));
+ $('#rows').innerHTML=d.slice(-12).reverse().map(x=>`<tr><td>${x.t}</td><td style="color:${COL[x.level]}">● ${NM[x.level]}</td><td style="color:${COL[x.lv.cpu]}">${x.cpu}%</td><td style="color:${COL[x.lv.mem]}">${x.mem}%</td><td style="color:${COL[x.lv.disk]}">${x.disk}%</td><td style="color:${COL[x.lv.http]}">${x.code} · ${x.ms}ms</td></tr>`).join('')}
+async function refresh(){render(await load())}
+$('#run').onclick=async e=>{const b=e.target;b.disabled=true;b.textContent='Running…';
+ try{await fetch('/api/run',{method:'POST'})}catch{}b.disabled=false;b.textContent='Run check now';refresh()};
+$('#auto').onclick=e=>{auto=!auto;e.target.textContent='Auto-refresh: '+(auto?'on':'off')};
+setInterval(()=>auto&&refresh(),5000);refresh();
+</script></body></html>
